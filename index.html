@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini Kiot POS - Desktop Web Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+      body { -webkit-tap-highlight-color: transparent; }
+      dialog::backdrop { background: rgba(15, 23, 42, 0.55); }
+      dialog.app-dialog[open] { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); margin: 0; max-height: 92vh; overflow: auto; }
+      .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+      @media print {
+        body * { visibility: hidden; }
+        #receiptContent, #receiptContent * { visibility: visible; }
+        #receiptContent { position: absolute; left: 0; top: 0; width: 100%; }
+      }
+    </style>
+  </head>
+  <body class="bg-slate-100 text-slate-900">
+    <div id="app" class="min-h-screen">
+      <div class="flex min-h-screen lg:h-screen lg:overflow-hidden">
+        <aside class="hidden lg:flex lg:w-72 lg:shrink-0 lg:flex-col bg-slate-950 text-white">
+          <div class="px-6 py-6 border-b border-white/10">
+            <div class="flex items-center gap-3">
+              <div class="w-11 h-11 rounded-2xl bg-blue-500 flex items-center justify-center text-xl font-bold">K</div>
+              <div>
+                <h1 class="text-lg font-bold">Mini Kiot POS</h1>
+                <p id="connectionStatus" class="text-xs text-slate-300">Chưa kiểm tra kết nối</p>
+              </div>
+            </div>
+          </div>
+          <nav class="flex-1 px-4 py-5 space-y-2">
+            <button data-view="Dashboard" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">📊</span>Báo cáo</button>
+            <button data-view="Products" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">📦</span>Hàng hóa</button>
+            <button data-view="Categories" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">🏷️</span>Danh mục</button>
+            <button data-view="POS" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">🧾</span>Bán hàng POS</button>
+            <button data-view="Orders" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">🛒</span>Đơn hàng</button>
+            <button data-view="History" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">🕘</span>Lịch sử</button>
+            <button data-view="Settings" class="nav-btn w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/10"><span class="text-xl">⚙️</span>Cài đặt</button>
+          </nav>
+          <div class="px-6 py-5 border-t border-white/10 text-xs text-slate-400">
+            <p>Web tĩnh dùng Supabase Database & Storage.</p>
+            <p class="mt-1">Desktop-first, responsive mobile.</p>
+          </div>
+        </aside>
+
+        <div class="flex-1 min-w-0 lg:h-screen lg:overflow-y-auto overscroll-contain">
+          <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
+            <div class="px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+              <div class="min-w-0">
+                <p class="text-xs font-medium text-blue-600 uppercase tracking-wide">Sales Management</p>
+                <h2 id="pageTitle" class="text-xl sm:text-2xl font-bold truncate">Báo cáo</h2>
+                <p id="mobileConnectionStatus" class="lg:hidden text-xs text-slate-500 mt-1">Chưa kiểm tra kết nối</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="btnRefresh" class="hidden sm:inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50">Làm mới</button>
+                <button id="btnOpenSettings" class="inline-flex rounded-2xl bg-slate-900 text-white px-4 py-2 text-sm font-semibold hover:bg-slate-800">Cài đặt</button>
+              </div>
+            </div>
+          </header>
+
+          <main class="px-4 sm:px-6 lg:px-8 py-6 pb-28 lg:pb-8 max-w-7xl mx-auto">
+            <section id="viewDashboard" class="space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+                <div>
+                  <h3 class="text-lg font-bold">Báo cáo kinh doanh</h3>
+                  <p class="text-sm text-slate-500">Doanh thu, lợi nhuận, biên lợi nhuận, sản phẩm bán chạy và hàng sắp hết.</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-2 w-full xl:w-auto">
+                  <select id="reportPeriod" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500">
+                    <option value="today">Hôm nay</option>
+                    <option value="month">Tháng này</option>
+                    <option value="year">Năm nay</option>
+                    <option value="all">Tất cả</option>
+                    <option value="custom">Tùy chọn</option>
+                  </select>
+                  <div id="reportCustomRange" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input id="reportDateFrom" type="date" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                    <input id="reportDateTo" type="date" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Doanh thu</p><p id="statRevenue" class="mt-2 text-2xl font-black text-slate-950">0đ</p><p class="mt-3 text-xs text-blue-600">Đơn hoàn thành</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Lợi nhuận gộp</p><p id="statProfit" class="mt-2 text-2xl font-black text-emerald-600">0đ</p><p class="mt-3 text-xs text-slate-500">Doanh thu trừ giá vốn</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Tiền vốn</p><p id="statCost" class="mt-2 text-2xl font-black text-orange-600">0đ</p><p class="mt-3 text-xs text-slate-500">COGS theo đơn bán</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Số đơn</p><p id="statOrderCount" class="mt-2 text-2xl font-black text-violet-600">0</p><p class="mt-3 text-xs text-slate-500">Đơn hoàn thành</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Biên lợi nhuận</p><p id="statMargin" class="mt-2 text-2xl font-black text-emerald-600">0%</p><p class="mt-3 text-xs text-slate-500">Gross margin</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Giá trị đơn TB</p><p id="statAov" class="mt-2 text-2xl font-black text-blue-600">0đ</p><p class="mt-3 text-xs text-slate-500">Average order value</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Số lượng bán</p><p id="statSoldQty" class="mt-2 text-2xl font-black text-slate-950">0</p><p class="mt-3 text-xs text-slate-500">Tổng item đã bán</p></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><p class="text-sm text-slate-500">Hủy / trả</p><p id="statReturnCancel" class="mt-2 text-2xl font-black text-red-600">0</p><p class="mt-3 text-xs text-slate-500">Đơn không hoàn tất</p></article>
+              </div>
+
+              <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <article class="xl:col-span-2 rounded-3xl bg-white border border-slate-200 p-5 shadow-sm">
+                  <div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-bold">Tăng trưởng doanh thu</h3><p class="text-sm text-slate-500">Doanh thu và lợi nhuận theo ngày</p></div><span class="text-xs rounded-full bg-slate-100 px-3 py-1 text-slate-500">Chart.js</span></div>
+                  <div class="h-[320px]"><canvas id="growthChart"></canvas></div>
+                </article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm">
+                  <h3 class="font-bold">Doanh thu theo danh mục</h3>
+                  <p class="text-sm text-slate-500 mb-4">Phân bổ bán hàng theo nhóm sản phẩm</p>
+                  <div class="h-[320px]"><canvas id="categoryChart"></canvas></div>
+                </article>
+              </div>
+
+              <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><h3 class="font-bold">Top sản phẩm bán chạy</h3><div id="topProductsList" class="mt-4 space-y-3"></div></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><h3 class="font-bold">Hàng sắp hết</h3><div id="lowStockList" class="mt-4 space-y-3"></div></article>
+                <article class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm"><h3 class="font-bold">Hoạt động gần đây</h3><div id="recentActivityList" class="mt-4 space-y-3"></div></article>
+              </div>
+            </section>
+
+            <section id="viewProducts" class="hidden space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div>
+                  <h3 class="text-lg font-bold">Quản lý hàng hóa</h3>
+                  <p class="text-sm text-slate-500">Nhập hàng đơn giản: tên, mã tự động, danh mục, SKU, mô tả, ảnh, giá vốn, giá bán và tồn kho.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <a href="./templates/product-import-template.xlsx" download class="inline-flex justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-slate-50">Mẫu hàng hóa</a>
+                  <button id="btnImportProducts" class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100">Import hàng hóa</button>
+                  <button id="btnExportProducts" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">Export hàng hóa</button>
+                  <button id="btnAddProduct" class="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">+ Thêm hàng hóa</button>
+                </div>
+              </div>
+              <input id="productExcelInput" type="file" accept=".xlsx,.xls" class="hidden" />
+
+              <div class="space-y-4">
+                <div class="rounded-3xl bg-white border border-slate-200 p-4 shadow-sm space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                      <input id="productSearch" type="search" placeholder="Tìm tên, mã sản phẩm, SKU..." class="xl:col-span-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                      <select id="productCategoryFilter" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Tất cả danh mục</option></select>
+                      <select id="productStockFilter" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Tất cả tồn kho</option><option value="in_stock">Còn hàng</option><option value="low_stock">Sắp hết</option><option value="out_stock">Hết hàng</option></select>
+                      <select id="productSort" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="newest">Mới nhất</option><option value="name_asc">Tên A-Z</option><option value="stock_asc">Tồn kho tăng dần</option><option value="stock_desc">Tồn kho giảm dần</option><option value="price_asc">Giá bán tăng dần</option><option value="price_desc">Giá bán giảm dần</option></select>
+                    </div>
+                    <p id="productResultSummary" class="text-xs text-slate-500">Sẵn sàng lọc và sắp xếp hàng hóa.</p>
+                  </div>
+                <div id="importResult" class="hidden rounded-3xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800"></div>
+                <div id="productList" class="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden"></div>
+              </div>
+            </section>
+
+            <section id="viewCategories" class="hidden space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div>
+                  <h3 class="text-lg font-bold">Quản lý danh mục</h3>
+                  <p class="text-sm text-slate-500">Tạo nhóm sản phẩm để lọc, báo cáo và mở rộng chi tiết sản phẩm sau này.</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6 items-start">
+                <form id="categoryForm" data-mode="create" class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div>
+                    <h4 id="categoryFormTitle" class="font-bold">Thêm danh mục</h4>
+                    <p class="mt-1 text-sm text-slate-500">Ví dụ: Áo thun, Đồ uống, Mỹ phẩm, Phụ kiện. Sản phẩm có thể để trống danh mục nếu chưa cần phân loại.</p>
+                  </div>
+                  <input id="categoryNameInput" placeholder="Tên danh mục" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <button id="btnSaveCategory" class="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800">Thêm danh mục</button>
+                  <button id="btnCancelCategoryEdit" type="button" class="hidden w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-200">Hủy sửa</button>
+                </form>
+                <section class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm">
+                  <div class="flex items-start justify-between gap-3 mb-4">
+                    <div>
+                      <h4 class="font-bold">Danh sách danh mục</h4>
+                      <p class="text-sm text-slate-500">Các danh mục sẽ xuất hiện trong form hàng hóa, POS và bộ lọc báo cáo.</p>
+                    </div>
+                    <span id="categorySummary" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">0 danh mục</span>
+                  </div>
+                  <div id="categoryManageList" class="space-y-3"></div>
+                </section>
+              </div>
+            </section>
+
+            <section id="viewPOS" class="hidden space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div><h3 class="text-lg font-bold">Bán hàng POS</h3><p class="text-sm text-slate-500">Chọn sản phẩm, tạo hóa đơn, trừ tồn kho và ghi lịch sử bán hàng.</p></div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full xl:w-[720px]">
+                  <input id="posSearch" type="search" placeholder="Tìm nhanh hàng hóa..." class="sm:col-span-1 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <select id="posCategoryFilter" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Tất cả danh mục</option></select>
+                  <select id="posSort" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="name_asc">Tên A-Z</option><option value="price_asc">Giá thấp trước</option><option value="price_desc">Giá cao trước</option><option value="stock_desc">Tồn nhiều trước</option></select>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start">
+                <section class="rounded-3xl bg-white border border-slate-200 p-4 shadow-sm"><div class="flex items-center justify-between mb-4"><h4 class="font-bold">Danh sách bán nhanh</h4><span class="text-xs text-slate-500">Click để thêm vào giỏ</span></div><div id="posProductList" class="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4"></div></section>
+                <aside class="xl:sticky xl:top-24 rounded-3xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div class="flex items-center justify-between"><div><h4 class="font-bold">Giỏ hàng</h4><p class="text-xs text-slate-500">Hóa đơn bán nhanh</p></div><button id="btnClearCart" class="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">Xóa giỏ</button></div>
+                  <div id="cartItems" class="space-y-2 max-h-[45vh] overflow-y-auto pr-1"></div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input id="posCustomerName" placeholder="Tên khách hàng" class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                    <input id="posCustomerPhone" placeholder="Số điện thoại" class="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                    <input id="posCustomerAddress" placeholder="Địa chỉ giao hàng / ghi chú địa chỉ" class="sm:col-span-2 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+                  </div>
+                  <div class="border-t border-slate-200 pt-4 space-y-3"><div class="flex justify-between text-sm"><span class="text-slate-500">Tạm tính</span><span id="cartSubtotal" class="font-semibold">0đ</span></div><div class="flex items-center justify-between gap-3 text-sm"><span class="text-slate-500">Giảm giá</span><input id="cartDiscount" type="number" min="0" value="0" class="w-40 rounded-xl border border-slate-300 px-3 py-2 text-right outline-none focus:border-blue-500" /></div><div class="flex justify-between text-lg font-black"><span>Khách trả</span><span id="cartTotal" class="text-blue-600">0đ</span></div></div>
+                  <button id="btnCheckout" class="w-full rounded-2xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 disabled:opacity-50">Tạo đơn & In hóa đơn</button>
+                </aside>
+              </div>
+            </section>
+
+            <section id="viewOrders" class="hidden space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div><h3 class="text-lg font-bold">Quản lý đơn hàng</h3><p class="text-sm text-slate-500">Import đơn hàng, export báo cáo, sửa thông tin đơn và xử lý trả hàng.</p></div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <a href="./templates/order-import-template.xlsx" download class="inline-flex justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-slate-50">Mẫu đơn hàng</a>
+                  <button id="btnImportOrders" class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100">Import đơn hàng</button>
+                  <button id="btnExportOrders" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">Export đơn hàng</button>
+                </div>
+              </div>
+              <input id="orderExcelInput" type="file" accept=".xlsx,.xls" class="hidden" />
+              <div class="rounded-3xl bg-white border border-slate-200 p-4 shadow-sm space-y-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+                  <input id="orderSearch" type="search" placeholder="Tìm mã đơn, khách hàng..." class="xl:col-span-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <select id="orderStatusFilter" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Tất cả trạng thái</option><option value="completed">Hoàn thành</option><option value="returned">Trả hàng</option></select>
+                  <input id="orderDateFrom" type="date" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <input id="orderDateTo" type="date" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <select id="orderSort" class="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option><option value="total_desc">Tổng tiền cao</option><option value="total_asc">Tổng tiền thấp</option></select>
+                </div>
+                <p id="orderImportResult" class="hidden rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"></p>
+              </div>
+              <div id="orderList" class="grid grid-cols-1 xl:grid-cols-2 gap-4"></div>
+            </section>
+
+            <section id="viewHistory" class="hidden space-y-6">
+              <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                <div><h3 class="text-lg font-bold">Lịch sử hoạt động</h3><p class="text-sm text-slate-500">Theo dõi nhập hàng, tạo sản phẩm, sửa xóa dữ liệu, bán hàng, sửa đơn và trả hàng.</p></div>
+                <button id="btnExportHistory" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">Export lịch sử</button>
+              </div>
+              <div class="rounded-3xl bg-white border border-slate-200 p-4 shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <input id="historySearch" type="search" placeholder="Tìm nội dung, mã đơn..." class="md:col-span-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                  <select id="historyActionFilter" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Tất cả hoạt động</option><option value="product_created">Thêm hàng hóa</option><option value="product_updated">Sửa hàng hóa</option><option value="product_deleted">Xóa hàng hóa</option><option value="product_imported">Import hàng hóa</option><option value="category_created">Thêm danh mục</option><option value="category_updated">Sửa danh mục</option><option value="category_deleted">Xóa danh mục</option><option value="order_created">Bán hàng</option><option value="order_updated">Sửa đơn hàng</option><option value="order_imported">Import đơn hàng</option><option value="order_returned">Trả hàng</option></select>
+                  <select id="historySort" class="rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option></select>
+                </div>
+              </div>
+              <div id="historyList" class="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden"></div>
+            </section>
+
+            <section id="viewSettings" class="hidden space-y-6">
+              <div><h3 class="text-lg font-bold">Cài đặt Supabase</h3><p class="text-sm text-slate-500">Lưu SUPABASE_URL và SUPABASE_ANON_KEY vào localStorage của trình duyệt.</p></div>
+              <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6 items-start">
+                <form id="settingsForm" class="rounded-3xl bg-white border border-slate-200 p-5 shadow-sm space-y-5">
+                  <div><label class="block text-sm font-semibold mb-2">SUPABASE_URL</label><input id="supabaseUrl" type="url" placeholder="https://xxxx.supabase.co" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" required /></div>
+                  <div><label class="block text-sm font-semibold mb-2">SUPABASE_ANON_KEY</label><textarea id="supabaseKey" rows="6" placeholder="eyJhbGciOi..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" required></textarea></div>
+                  <div class="flex flex-col sm:flex-row gap-2"><button type="submit" class="flex-1 rounded-2xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700">Lưu cấu hình</button><button id="btnClearConfig" type="button" class="flex-1 rounded-2xl bg-slate-100 py-3 font-bold text-slate-700 hover:bg-slate-200">Xóa cấu hình</button></div>
+                </form>
+                <aside class="rounded-3xl bg-slate-950 text-white p-5 shadow-sm"><h4 class="font-bold">Lưu ý bảo mật</h4><ul class="mt-4 space-y-3 text-sm text-slate-300 list-disc list-inside"><li>Chỉ dùng anon public key trên frontend.</li><li>Không đưa service role key vào GitHub Pages.</li><li>Bật RLS và chỉnh policy trước khi dùng thật.</li><li>Dùng RPC cho tạo đơn, import đơn, hủy đơn và trả hàng.</li></ul></aside>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+
+      <nav class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 safe-bottom overflow-x-auto">
+        <div class="grid grid-cols-7 min-w-[640px]">
+          <button data-view="Dashboard" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">📊</div>Báo cáo</button>
+          <button data-view="Products" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">📦</div>Hàng hóa</button>
+          <button data-view="Categories" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">🏷️</div>Danh mục</button>
+          <button data-view="POS" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">🧾</div>POS</button>
+          <button data-view="Orders" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">🛒</div>Đơn</button>
+          <button data-view="History" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">🕘</div>Lịch sử</button>
+          <button data-view="Settings" class="nav-btn py-3 text-[11px] font-medium text-slate-500"><div class="text-lg">⚙️</div>Cài đặt</button>
+        </div>
+      </nav>
+
+      <dialog id="productModal" class="app-dialog w-[96%] max-w-4xl rounded-3xl p-0 backdrop:bg-black/40">
+        <form id="productForm" class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 id="productModalTitle" class="text-lg font-bold">Thêm hàng hóa</h3>
+              <p id="productModalDesc" class="text-sm text-slate-500">Form đơn giản cho sản phẩm thường. Mỗi sản phẩm có một tồn kho, một giá vốn và một giá bán.</p>
+            </div>
+            <button type="button" id="btnCloseProductModal" class="w-10 h-10 rounded-full bg-slate-100 font-bold">✕</button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold mb-2">Tên sản phẩm</label>
+              <input id="productName" placeholder="Ví dụ: Áo thun nam basic, Trà sữa truyền thống..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" required />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Mã sản phẩm</label>
+              <div class="flex gap-2">
+                <input id="productCode" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+                <button id="btnGenerateProductCode" type="button" class="rounded-2xl bg-slate-100 px-4 py-3 text-xs font-bold text-slate-700">Tạo</button>
+              </div>
+              <p class="mt-1 text-xs text-slate-400">Tự tạo ngắn gọn từ tên sản phẩm, có thể sửa lại.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Danh mục</label>
+              <select id="productCategory" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"><option value="">Chưa chọn danh mục</option></select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">SKU</label>
+              <input id="productSku" placeholder="Mã SKU nội bộ hoặc mã nhà cung cấp" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold mb-2">Mô tả</label>
+              <textarea id="productDescription" rows="3" placeholder="Thông tin ngắn về sản phẩm..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500"></textarea>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold mb-2">Ảnh sản phẩm</label>
+              <input id="productImage" type="file" accept="image/*" capture="environment" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm" />
+            </div>
+          </div>
+
+          <div class="rounded-3xl bg-slate-50 p-4">
+            <h4 class="font-semibold">Giá và tồn kho</h4>
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div><label class="block text-xs font-semibold mb-1">Giá vốn</label><input id="costPrice" type="number" min="0" class="w-full rounded-2xl border border-slate-300 px-3 py-3 text-sm outline-none focus:border-blue-500" /></div>
+              <div><label class="block text-xs font-semibold mb-1">Giá bán</label><input id="salePrice" type="number" min="0" class="w-full rounded-2xl border border-slate-300 px-3 py-3 text-sm outline-none focus:border-blue-500" /></div>
+              <div><label class="block text-xs font-semibold mb-1">Tồn kho</label><input id="stockQty" type="number" min="0" class="w-full rounded-2xl border border-slate-300 px-3 py-3 text-sm outline-none focus:border-blue-500" /></div>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-2 justify-end">
+            <button type="button" id="btnCancelProductModal" class="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>
+            <button id="productSubmitLabel" type="submit" class="rounded-2xl bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700">Lưu hàng hóa</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="receiptModal" class="app-dialog w-[96%] max-w-sm rounded-3xl p-0 backdrop:bg-black/40"><div id="receiptContent" class="p-5 space-y-3"></div><div class="p-4 border-t border-slate-200 flex gap-3"><button id="btnCloseReceipt" class="flex-1 rounded-2xl bg-slate-100 py-3 font-semibold">Đóng</button><button id="btnPrintReceipt" class="flex-1 rounded-2xl bg-blue-600 text-white py-3 font-semibold">In</button></div></dialog>
+      <dialog id="orderEditModal" class="app-dialog w-[96%] max-w-2xl rounded-3xl p-0 backdrop:bg-black/40">
+        <form id="orderEditForm" class="p-5 sm:p-6 space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-bold">Sửa đơn hàng</h3>
+              <p class="text-sm text-slate-500">Cập nhật thông tin khách hàng và giảm giá. Dòng hàng bán ra được giữ nguyên để bảo toàn lịch sử tồn kho.</p>
+            </div>
+            <button type="button" id="btnCloseOrderEditModal" class="w-10 h-10 rounded-full bg-slate-100 font-bold">✕</button>
+          </div>
+          <input id="orderEditId" type="hidden" />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-semibold mb-2">Mã đơn</label>
+              <input id="orderEditCode" readonly class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Trạng thái</label>
+              <input id="orderEditStatus" readonly class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Tên khách hàng</label>
+              <input id="orderEditCustomerName" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Số điện thoại</label>
+              <input id="orderEditCustomerPhone" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold mb-2">Địa chỉ</label>
+              <input id="orderEditCustomerAddress" placeholder="Địa chỉ giao hàng hoặc ghi chú địa chỉ" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Giảm giá</label>
+              <input id="orderEditDiscount" type="number" min="0" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-2">Tổng sau giảm</label>
+              <input id="orderEditTotalPreview" readonly class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-blue-600" />
+            </div>
+          </div>
+          <div class="rounded-3xl bg-slate-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <h4 class="font-semibold">Chi tiết hàng bán</h4>
+              <span id="orderEditItemCount" class="text-xs rounded-full bg-white px-3 py-1 text-slate-500">0 dòng</span>
+            </div>
+            <div id="orderEditItems" class="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1"></div>
+          </div>
+          <div class="flex flex-col sm:flex-row gap-2 justify-end">
+            <button type="button" id="btnCancelOrderEditModal" class="rounded-2xl bg-slate-100 px-5 py-3 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>
+            <button id="orderEditSubmit" type="submit" class="rounded-2xl bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700">Lưu đơn hàng</button>
+          </div>
+        </form>
+      </dialog>
+      <div id="toast" class="hidden fixed top-5 right-5 z-50 max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-xl"></div>
+    </div>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
