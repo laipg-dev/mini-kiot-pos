@@ -1,6 +1,6 @@
 -- sql/schema.sql
 -- Chạy trong Supabase SQL Editor. Bản demo cho web tĩnh, cần thay RLS policy khi dùng thật.
-
+/*
 create extension if not exists pgcrypto;
 
 create table if not exists public.categories (
