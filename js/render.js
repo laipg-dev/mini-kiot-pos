@@ -223,14 +223,44 @@ export function renderOrders(orders) {
 function renderOrderCard(order) {
   const badge = getOrderBadge(order.status);
   const items = order.order_items || [];
+  const revenue = Number(order.total || 0);
+  const cost = Number(order.total_cost || 0);
+  const profit = Number(order.gross_profit ?? (revenue - cost));
+  const margin = revenue > 0 ? profit / revenue : 0;
+  const isCompleted = order.status === "completed";
+  const profitLabel = isCompleted ? "Lợi nhuận" : "Lợi nhuận trước hủy/trả";
+
   return `
     <article class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
       <div class="flex items-start justify-between gap-3"><div><h3 class="font-black text-slate-950">${escapeHtml(order.code)}</h3><p class="text-xs text-slate-500">${formatDateTime(order.created_at)}</p><p class="text-xs text-slate-500">${escapeHtml(order.customer_name || "Khách lẻ")} ${order.customer_phone ? `· ${escapeHtml(order.customer_phone)}` : ""}</p>${order.customer_address ? `<p class="mt-1 text-xs text-slate-500">📍 ${escapeHtml(order.customer_address)}</p>` : ""}</div><span class="rounded-full px-3 py-1 text-xs font-bold ${badge.className}">${badge.label}</span></div>
       <div class="space-y-2 max-h-44 overflow-y-auto pr-1">${items.map((item) => `<div class="flex justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2 text-sm"><span class="text-slate-600 truncate">${escapeHtml(item.product_name)} <span class="text-slate-400">${item.variant_label && item.variant_label !== "Mặc định" ? escapeHtml(item.variant_label) + " " : ""}x${item.quantity}</span></span><span class="font-semibold whitespace-nowrap">${formatCurrency(item.line_total)}</span></div>`).join("")}</div>
-      <div class="border-t border-slate-200 pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><p class="text-xs text-slate-500">Tổng thanh toán</p><p class="text-lg font-black text-blue-600">${formatCurrency(order.total)}</p><p class="text-xs text-slate-400">Lãi gộp ${formatCurrency(order.gross_profit)}</p></div>${order.status === "completed" ? `<div class="flex flex-wrap gap-2"><button data-edit-order="${order.id}" class="rounded-2xl bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">Sửa</button><button data-return-order="${order.id}" class="rounded-2xl bg-amber-50 px-4 py-2 text-xs font-bold text-amber-600 hover:bg-amber-100">Trả hàng</button></div>` : ""}</div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 border-t border-slate-200 pt-4">
+        <div class="rounded-2xl bg-blue-50 p-3">
+          <p class="text-xs text-slate-500">Doanh thu</p>
+          <p class="mt-1 font-black text-blue-700">${formatCurrency(revenue)}</p>
+        </div>
+        <div class="rounded-2xl bg-orange-50 p-3">
+          <p class="text-xs text-slate-500">Giá vốn</p>
+          <p class="mt-1 font-black text-orange-700">${formatCurrency(cost)}</p>
+        </div>
+        <div class="rounded-2xl ${isCompleted ? "bg-emerald-50" : "bg-slate-100"} p-3">
+          <p class="text-xs text-slate-500">${profitLabel}</p>
+          <p class="mt-1 font-black ${isCompleted ? "text-emerald-700" : "text-slate-500"}">${formatCurrency(profit)}</p>
+        </div>
+        <div class="rounded-2xl bg-violet-50 p-3">
+          <p class="text-xs text-slate-500">Biên lợi nhuận</p>
+          <p class="mt-1 font-black text-violet-700">${formatPercent(margin)}</p>
+        </div>
+      </div>
+
+      ${!isCompleted ? `<p class="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Đơn đã ${order.status === "returned" ? "trả hàng" : "hủy"}, nên doanh thu và lợi nhuận này không được ghi nhận vào báo cáo.</p>` : ""}
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div><p class="text-xs text-slate-500">Tổng thanh toán</p><p class="text-lg font-black text-blue-600">${formatCurrency(order.total)}</p></div>
+        ${isCompleted ? `<div class="flex flex-wrap gap-2"><button data-edit-order="${order.id}" class="rounded-2xl bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">Sửa</button><button data-return-order="${order.id}" class="rounded-2xl bg-amber-50 px-4 py-2 text-xs font-bold text-amber-600 hover:bg-amber-100">Trả hàng</button></div>` : ""}
+      </div>
     </article>`;
 }
-
 
 function getOrderBadge(status) {
   if (status === "completed") return { label: "Hoàn thành", className: "bg-emerald-50 text-emerald-700" };
@@ -248,11 +278,26 @@ export function renderDashboard(report, chartData, products = [], activityLogs =
   setText("#statAov", formatCurrency(report?.aov || 0));
   setText("#statSoldQty", formatNumber(report?.soldQty || 0));
   setText("#statReturnCancel", formatNumber(Number(report?.cancelledCount || 0) + Number(report?.returnedCount || 0)));
+  const inventorySummary = calculateInventoryValue(products);
+  setText("#statInventoryValue", formatCurrency(inventorySummary.costValue));
+  setText("#statInventoryQty", `${formatNumber(inventorySummary.quantity)} sản phẩm theo giá vốn`);
   renderGrowthChart(chartData || []);
   renderCategoryChart(buildCategoryBreakdown(report?.completed || []));
   renderTopProducts(report?.completed || []);
   renderLowStock(products);
   renderRecentActivity(activityLogs.slice(0, 6));
+}
+
+function calculateInventoryValue(products = []) {
+  return products.reduce((summary, product) => {
+    for (const variant of product.product_variants || []) {
+      const quantity = Math.max(0, Number(variant.stock_qty || 0));
+      const costPrice = Math.max(0, Number(variant.cost_price || 0));
+      summary.quantity += quantity;
+      summary.costValue += quantity * costPrice;
+    }
+    return summary;
+  }, { quantity: 0, costValue: 0 });
 }
 
 function setText(selector, value) { const el = qs(selector); if (el) el.textContent = value; }
